@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum Gender {
+  FEMALE
+  MALE
+}
+
+enum PaymentMethod {
+  COD
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  // Store only a secure hash (e.g. bcrypt/argon2), never a plaintext password.
+  passwordHash String
+  phone        String?
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  addresses Address[]
+  orders    Order[]
+  sessions  Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  // SHA-256 of the cookie token; the raw token is never stored.
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Important administrative actions (who did what, when).
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  nameBn      String?
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  name          String
+  nameBn        String?
+  slug          String   @unique
+  sku           String?  @unique
+  description   String?
+  descriptionBn String?
+  price         Decimal  @db.Decimal(10, 2)
+  // Original price, only set when the product is genuinely on sale.
+  oldPrice      Decimal? @db.Decimal(10, 2)
+  sizes         String[] @default([])
+  colors        String[] @default([])
+  stock         Int      @default(0)
+  gender        Gender
+  images        String[]
+  isActive      Boolean  @default(true)
+  categoryId    String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  orderItems OrderItem[]
+
+  @@index([categoryId])
+  @@index([gender])
+  @@index([isActive])
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  userId     String
+  fullName   String
+  phone      String
+  line1      String
+  line2      String?
+  city       String
+  state      String?
+  postalCode String
+  country    String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  // Null for guest orders placed without an account.
+  userId         String?
+  orderNumber    String        @unique
+  // Client-generated key; makes retries and double submits create one order.
+  idempotencyKey String        @unique
+  // Secret in the confirmation link so guest orders stay private.
+  accessToken    String        @unique @default(cuid())
+  status         OrderStatus   @default(PENDING)
+  paymentMethod  PaymentMethod @default(COD)
+  subtotalAmount Decimal       @default(0) @db.Decimal(10, 2)
+  shippingFee    Decimal       @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal       @db.Decimal(10, 2)
+  deliveryNote   String?
+
+  // Delivery details are copied at order time so later address edits don't change past orders.
+  shippingName       String
+  shippingPhone      String
+  shippingLine1      String
+  shippingLine2      String?
+  shippingCity       String
+  shippingState      String?
+  shippingPostalCode String
+  shippingCountry    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User?       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  productId   String
+  quantity    Int
+  // Product name and options as they were when the order was placed.
+  productName String
+  size        String?
+  color       String?
+  // Unit price at the time of purchase.
+  price       Decimal @db.Decimal(10, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, productId, size, color])
+  @@index([productId])
+}

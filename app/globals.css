@@ -24,3 +24,9 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Bengali text uses Noto Sans Bengali; English keeps the existing fonts. */
+html[lang="bn"] body,
+html[lang="bn"] .font-serif {
+  font-family: var(--font-bengali), "Noto Sans Bengali", sans-serif;
+}
